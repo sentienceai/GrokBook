@@ -3,38 +3,29 @@ import os
 import PyPDF2
 import docx
 import pandas as pd
+import asyncio
 
 class TextExtractor:
     @staticmethod
-    def extract(file_path, filename):
-        ext = os.path.splitext(filename)[1].lower()
-        if ext == '.pdf':
-            return TextExtractor.extract_pdf(file_path)
-        elif ext in ['.doc', '.docx']:
-            return TextExtractor.extract_docx(file_path)
-        elif ext == '.txt':
-            return TextExtractor.extract_txt(file_path)
+    async def extract(file_path, filename):
+        loop = asyncio.get_running_loop()
+        if filename.lower().endswith('.pdf'):
+            return await loop.run_in_executor(None, TextExtractor._extract_from_pdf, file_path)
+        elif filename.lower().endswith('.docx'):
+            return await loop.run_in_executor(None, TextExtractor._extract_from_docx, file_path)
         else:
-            raise ValueError('Unsupported file type')
+            raise ValueError("Unsupported file format")
 
     @staticmethod
-    def extract_pdf(file_path):
-        text = ''
-        with open(file_path, 'rb') as f:
-            reader = PyPDF2.PdfFileReader(f)
-            for page_num in range(reader.numPages):
-                text += reader.getPage(page_num).extractText()
-        return text
+    def _extract_from_pdf(file_path):
+        with open(file_path, 'rb') as file:
+            reader = PyPDF2.PdfReader(file)
+            return ' '.join(page.extract_text() for page in reader.pages)
 
     @staticmethod
-    def extract_docx(file_path):
+    def _extract_from_docx(file_path):
         doc = docx.Document(file_path)
-        return '\n'.join([para.text for para in doc.paragraphs])
-
-    @staticmethod
-    def extract_txt(file_path):
-        with open(file_path, 'r') as f:
-            return f.read()
+        return ' '.join(paragraph.text for paragraph in doc.paragraphs)
 
     @staticmethod
     def extract_dataset(file_path, extension):

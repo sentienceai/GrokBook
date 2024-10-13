@@ -1,48 +1,55 @@
 # app/resources/document_upload_resource.py
-from flask_restful import Resource
-from flask import request
+from quart import request, current_app
+from quart.views import MethodView
 import tempfile
 import os
+import logging
+import traceback
+import asyncio
+from werkzeug.utils import secure_filename
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 from app.utils.text_extractor import TextExtractor
 from app.services.grok_service import GrokService
 from app.services.x_service import XService
-from flask import jsonify
-from flask_restful import Resource
 
-class DocumentUploadResource(Resource):
-    def post(self):
-        try:
-            # Add your file upload logic here
-            # For now, let's just return a simple message
-            return jsonify({"message": "File upload endpoint reached"}), 200
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-        
-        file = request.files['file']
-        filename = file.filename
-
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            file.save(tmp.name)
-            ext = os.path.splitext(filename)[1].lower()
-
-            if ext in ['.pdf', '.doc', '.docx', '.txt']:
-                text_content = TextExtractor.extract(tmp.name, filename)
-                os.unlink(tmp.name)
-                analysis_result = GrokService.analyze_text(text_content)
-            elif ext in ['.csv', '.xlsx']:
-                df = TextExtractor.extract_dataset(tmp.name, ext)
-                os.unlink(tmp.name)
-                data_csv = df.to_csv(index=False)
-                analysis_result = GrokService.analyze_dataset(data_csv)
-            else:
-                os.unlink(tmp.name)
-                return {'message': 'Unsupported file type'}, 400
-
-            key_points = analysis_result.get('key_points', [])
-            relevant_posts = XService.get_relevant_posts(key_points)
-
-            return {
-                'analysis_result': analysis_result,
-                'relevant_posts': relevant_posts
-            }, 200
+class DocumentUploadResource(MethodView):
+    @staticmethod
+    async def post():
+        async with current_app.app_context():    
+            current_app.logger.debug("DocumentUploadResource.post method called")
+            form = await request.form
+            files = await request.files
+            if 'file' not in files:
+                return {'error': 'No file part in the request'}, 400
+            file = files['file']
+            if file.filename == '':
+                return {'error': 'No file selected for uploading'}, 400
+            
+            filename = secure_filename(file.filename)
+            current_app.logger.info(f"Processing file: {filename}")
+            
+            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                await file.save(temp_file.name)
+                current_app.logger.debug(f"File saved temporarily at {temp_file.name}")
+                
+                try:
+                    file_extension = os.path.splitext(filename)[1].lower()
+                    current_app.logger.debug(f"File extension: {file_extension}")
+                    
+                    current_app.logger.debug("Extracting text from document")
+                    text = await TextExtractor.extract(temp_file.name, filename)
+                    
+                    current_app.logger.debug("Analyzing text with GrokService")
+                    grok_service = GrokService()
+                    analysis_result = await grok_service.analyze_text(text)
+                    
+                    return analysis_result, 200
+                except Exception as e:
+                    current_app.logger.error(f"An error occurred during file processing: {str(e)}")
+                    return {'error': str(e)}, 500
+                finally:
+                    current_app.logger.debug(f"Removing temporary file: {temp_file.name}")
+                    os.unlink(temp_file.name)
