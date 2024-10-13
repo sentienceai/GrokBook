@@ -7,9 +7,18 @@ import os
 from app.utils.text_extractor import TextExtractor
 from app.services.grok_service import GrokService
 from app.services.x_service import XService
+from flask import jsonify
+from flask_restful import Resource
 
 class DocumentUploadResource(Resource):
     def post(self):
+        try:
+            # Add your file upload logic here
+            # For now, let's just return a simple message
+            return jsonify({"message": "File upload endpoint reached"}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        
         file = request.files['file']
         filename = file.filename
 
